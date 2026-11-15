@@ -179,29 +179,27 @@
   });
 </script>
 
-<svelte:head><title>Замер — скорость загрузки</title></svelte:head>
+<svelte:head><title>Замер скорости скачивания</title></svelte:head>
 
 <div class="app-shell">
   <header class="topbar">
-    <div class="wordmark" aria-label="Замер">
+    <div class="wordmark" aria-label="Замер скорости">
       <span class="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 28 28" fill="none"><path d="M14 4v15m-6-6 6 6 6-6M7 24h14" /></svg>
       </span>
-      <span>замер<span class="brand-period">.</span></span>
+      <span>Замер скорости</span>
     </div>
-    <div class="header-note"><span class="tiny-line" aria-hidden="true"></span>10 запросов. Последовательно.</div>
+    <div class="header-note">10 последовательных запросов</div>
   </header>
 
   <main>
     <section class="intro" aria-labelledby="page-title">
       <div>
-        <p class="eyebrow">ПРОВЕРКА ЗАГРУЗКИ</p>
-        <h1 id="page-title">Скорость загрузки — в деталях.</h1>
-        <p class="lead">Укажите файл. Мы скачаем его десять раз и покажем каждый замер.</p>
+        <h1 id="page-title">Замер скорости скачивания</h1>
+        <p class="lead">Десять последовательных GET-запросов к файлу с расчётом времени и скорости.</p>
       </div>
       <div class="measurement-origin">
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8m-4-4v4" /></svg>
-        <span>С компьютера, <br />где запущен Python</span>
+        <span>Запросы отправляются<br />с сервера приложения</span>
       </div>
     </section>
 
@@ -232,13 +230,13 @@
     </section>
 
     {#if runIsDemo && phase !== 'idle'}
-      <div class="demo-note"><span class="note-tag">ПРИМЕР</span>Локальный пример — не скорость интернета<span class="demo-detail">Данные приходят с этого же компьютера.</span></div>
+      <div class="demo-note"><span class="note-tag">ТЕСТ</span>Локальный файл 1 MiB для проверки работы интерфейса.</div>
     {/if}
 
     {#if phase === 'error'}
-      <div class="notice error-notice" role="alert"><strong>Не получилось завершить замер.</strong><span>{errorMessage}</span></div>
+      <div class="notice error-notice" role="alert"><strong>Ошибка замера.</strong><span>{errorMessage}</span></div>
     {:else if phase === 'cancelled'}
-      <div class="notice" role="status"><strong>Вы остановили измерение.</strong><span>Завершено {samples.length} из 10 запросов. Для итоговой скорости нужна полная серия.</span></div>
+      <div class="notice" role="status"><strong>Измерение остановлено.</strong><span>Завершено {samples.length} из 10 запросов.</span></div>
     {/if}
 
     <section class="results-section" aria-label="Результаты измерения">
@@ -255,30 +253,29 @@
         <div class="speed-result">
           <h2>Скорость скачивания</h2>
           <div class="speed-number" class:empty={speed === null} data-testid="speed-value">{speed === null ? '—' : number(speed)}</div>
-          <div class="speed-units"><strong>MiB/s</strong><span>{speed === null ? 'мебибайт в секунду' : `${number(speed * 8.388608)} Мбит/с`}</span></div>
+          <div class="speed-units"><strong>MiB/s</strong><span>{speed === null ? '' : `${number(speed * 8.388608)} Мбит/с`}</span></div>
           <div class="result-context">
             {#if phase === 'done'}
-              <svg class="check-mark" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m3 8 3.5 3.5L13 5" /></svg>По всем 10 полным ответам
+              <svg class="check-mark" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m3 8 3.5 3.5L13 5" /></svg>По 10 ответам
             {:else if busy}
-              <span class="waiting-mark" aria-hidden="true"></span>Ждём полный ответ {nextRequest} из 10
+              <span class="waiting-mark" aria-hidden="true"></span>Запрос {nextRequest} из 10
             {:else if phase === 'idle'}
-              <span class="context-line" aria-hidden="true"></span>Начните с прямой ссылки на файл
+              <span class="context-line" aria-hidden="true"></span>Готов к запуску
             {:else}
-              <span class="context-line" aria-hidden="true"></span>Итог появится после полной серии
+              <span class="context-line" aria-hidden="true"></span>Требуется полная серия
             {/if}
           </div>
           <div class="segments" role="progressbar" aria-label="Завершённые загрузки" aria-valuemin="0" aria-valuemax="10" aria-valuenow={samples.length} aria-valuetext={`${samples.length} из 10 загрузок завершено`}>
             {#each positions as index}<span class:filled={index < samples.length} class:current={busy && index === samples.length}></span>{/each}
           </div>
-          {#if phase === 'running' && samples.length > 0}<p class="partial-note">Пока по {samples.length} завершённым запросам</p>{/if}
         </div>
 
         <figure class="timing-figure">
-          <figcaption><h2>Время каждого ответа</h2><span>Меньше — быстрее</span></figcaption>
+          <figcaption><h2>Время каждого ответа</h2><span>мс</span></figcaption>
           <div class="chart-area">
             <div class="chart-grid" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
             {#if samples.length === 0}
-              <div class="chart-empty"><svg viewBox="0 0 40 28" fill="none" aria-hidden="true"><path d="M2 24h36M7 17v7m9-15v15m8-10v10m9-22v22" /></svg><span>{busy ? 'Скачиваем первый файл…' : 'Здесь появятся десять замеров'}</span></div>
+              <div class="chart-empty"><span>{busy ? 'Выполняется первый запрос…' : 'Здесь отобразятся результаты 10 запросов'}</span></div>
             {/if}
             <div class="columns">
               {#each positions as index}
@@ -295,24 +292,28 @@
           </div>
           <div class="chart-description" aria-live="off">
             {#if selectedSample}<span>Запрос <strong>{String(selectedSample.index).padStart(2, '0')}</strong></span><span>{duration(selectedSample.seconds)}</span><span>{volume(selectedSample.bytes)}</span><span>{number(selectedSample.speed_mib_s)} MiB/s</span>
-            {:else}<span>От отправки запроса до последнего байта</span>{/if}
+            {:else}<span>От отправки запроса до конца чтения тела</span>{/if}
           </div>
         </figure>
       </div>
 
       <dl class="summary-metrics">
-        <div><dt>Среднее время</dt><dd>{showNumbers && averageSeconds !== null ? duration(averageSeconds) : '—'}<span>на полный ответ</span></dd></div>
-        <div><dt>Скачано всего</dt><dd title={samples.length ? `${number(totalBytes, 0)} байт` : undefined}>{samples.length ? volume(totalBytes) : '—'}<span>{samples.length ? `${number(totalBytes, 0)} байт` : 'только тела ответов'}</span></dd></div>
-        <div><dt>Завершено запросов</dt><dd>{String(samples.length).padStart(2, '0')}<span class="count-denominator">/ 10</span><span>без параллельных загрузок</span></dd></div>
+        <div><dt>Среднее время</dt><dd>{showNumbers && averageSeconds !== null ? duration(averageSeconds) : '—'}<span>на запрос</span></dd></div>
+        <div><dt>Скачано</dt><dd title={samples.length ? `${number(totalBytes, 0)} байт` : undefined}>{samples.length ? volume(totalBytes) : '—'}<span>{samples.length ? `${number(totalBytes, 0)} байт` : 'тела ответов'}</span></dd></div>
+        <div><dt>Завершено</dt><dd>{String(samples.length).padStart(2, '0')}<span class="count-denominator">/ 10</span><span>запросов</span></dd></div>
       </dl>
       {#if runHost}<p class="target-host">Сервер назначения <span>{runHost}</span></p>{/if}
     </section>
 
     <details class="method-note">
-      <summary><span>Что именно мы измеряем</span><span class="details-plus" aria-hidden="true">+</span></summary>
-      <div class="method-content"><p>Общий объём десяти ответов делится на сумму времени их полной загрузки. Время обновления интерфейса в расчёт не входит.</p><p>Результат зависит от выбранного сервера, размера файла и соединения компьютера, на котором запущен Python. Первый запрос включает установление соединения. Нужна прямая ссылка: перенаправления не выполняются.</p><p><strong>1 MiB = 1 048 576 байт.</strong> Считаются полученные байты тела до распаковки, без HTTP-заголовков и служебного трафика.</p></div>
+      <summary><span>Методика расчёта</span><span class="details-plus" aria-hidden="true">+</span></summary>
+      <div class="method-content">
+        <p><strong>Формула скорости:</strong> суммарный объём тел 10 ответов делится на сумму их длительностей: <code>MiB/s = Байты / Секунды / 1 048 576</code>.</p>
+        <p><strong>Чистое время:</strong> монотонный таймер измеряет интервал от отправки GET до закрытия ответа. Накладные расходы интерфейса исключены.</p>
+        <p><strong>Потоковое чтение:</strong> данные считываются напрямую из сокета без сохранения на диск и без распаковки сжатия.</p>
+      </div>
     </details>
   </main>
 
-  <footer><span>10 последовательных загрузок</span><span>1 MiB = 1 048 576 байт</span></footer>
+  <footer><span>CLI: speedtest.py</span><span>1 MiB = 1 048 576 байт</span></footer>
 </div>

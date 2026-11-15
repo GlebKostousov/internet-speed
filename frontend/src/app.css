@@ -28,17 +28,12 @@ p, h1, h2, dl, dd, figure { margin: 0; }
 .wordmark { display: flex; align-items: center; gap: 11px; font-size: 27px; line-height: 1; font-weight: 740; letter-spacing: -1.2px; }
 .brand-mark { width: 35px; height: 35px; background: var(--ink); color: #eef5ec; display: grid; place-items: center; border-radius: 9px; }
 .brand-mark svg { width: 25px; height: 25px; stroke-width: 1.8; }
-.brand-period { color: var(--accent); }
-.header-note { display: flex; gap: 11px; align-items: center; font-size: 12px; color: var(--muted); letter-spacing: 0.1px; }
-.tiny-line { height: 10px; width: 17px; border-top: 1px solid #8e9d91; border-bottom: 1px solid #8e9d91; position: relative; }
-.tiny-line::after { content: ''; position: absolute; left: 0; right: 0; top: 3.5px; height: 1px; background: #8e9d91; }
+.header-note { font-size: 12px; color: var(--muted); letter-spacing: 0.1px; }
 main { padding-top: 42px; }
 .intro { display: flex; align-items: center; justify-content: space-between; gap: 30px; margin-bottom: 28px; }
-.eyebrow { color: var(--accent); font-size: 11px; letter-spacing: 1.8px; font-weight: 700; margin-bottom: 11px; }
 h1 { font-size: clamp(24px, 2.6vw, 34px); letter-spacing: -1.05px; font-weight: 610; line-height: 1.2; }
 .lead { color: var(--muted); font-size: 14px; line-height: 1.6; margin-top: 11px; }
-.measurement-origin { color: var(--muted); display: flex; gap: 10px; font-size: 11px; line-height: 1.6; white-space: nowrap; padding-top: 14px; }
-.measurement-origin svg { width: 21px; height: 21px; margin-top: 5px; color: #8b998f; }
+.measurement-origin { color: var(--muted); display: flex; gap: 10px; font-size: 11px; line-height: 1.6; white-space: nowrap; padding-top: 14px; text-align: right; }
 .input-section { padding: 24px 26px 18px; background: white; border: 1.5px solid var(--line); border-radius: 13px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04); }
 .field-label { display: block; font-size: 12px; font-weight: 610; margin-bottom: 10px; }
 .input-line { display: flex; gap: 12px; }
@@ -109,7 +104,6 @@ h2 { font-size: 12px; font-weight: 550; letter-spacing: 0; }
 .chart-grid span { border-top: 1px dashed #e5ebe1; height: 1px; }
 .chart-grid span:last-child { border-top-style: solid; }
 .chart-empty { position: absolute; z-index: 1; inset: 0 0 27px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 13px; background: #ffffffc4; color: #93a08f; font-size: 11px; pointer-events: none; }
-.chart-empty svg { width: 35px; height: 26px; stroke-width: 1.3; color: #b4c5ae; }
 .columns { height: 100%; position: relative; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 9px; }
 .chart-column { display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; }
 .bar-hit-area { position: relative; display: flex; align-items: flex-end; justify-content: center; flex: 1; min-height: 0; width: 100%; border: 0; padding: 0 2px; background: none; border-radius: 4px 4px 0 0; color: #65866d; }
@@ -149,9 +143,8 @@ footer > span:last-child { color: #a1ad99; }
 @media (max-width: 900px) {
   .app-shell { padding: 0 25px; }
   .intro { align-items: flex-start; }
-  .measurement-origin { display: flex; padding-top: 0; }
+  .measurement-origin { display: flex; padding-top: 0; text-align: left; }
   .measurement-origin br { display: none; }
-  .measurement-origin svg { margin-top: 0; }
   .intro { flex-direction: column; gap: 13px; }
   .result-workspace { grid-template-columns: 0.88fr 1.25fr; gap: 25px; }
   .speed-result { padding-right: 0; }
@@ -164,11 +157,9 @@ footer > span:last-child { color: #a1ad99; }
   .wordmark { font-size: 25px; gap: 9px; }
   .brand-mark { width: 31px; height: 31px; border-radius: 8px; }
   .brand-mark svg { width: 22px; height: 22px; }
-  .header-note { font-size: 11px; gap: 6px; max-width: 129px; line-height: 1.5; text-align: right; }
-  .tiny-line { display: none; }
+  .header-note { font-size: 11px; max-width: 140px; line-height: 1.4; text-align: right; }
   main { padding-top: 29px; }
   .intro { margin-bottom: 22px; }
-  .eyebrow { font-size: 10px; letter-spacing: 1.5px; margin-bottom: 10px; }
   h1 { max-width: 350px; font-size: 30px; letter-spacing: -0.9px; line-height: 1.15; }
   .lead { font-size: 12px; margin-top: 12px; max-width: 320px; }
   .input-section { padding: 18px 16px 14px; border-radius: 10px; }
