@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Качество кода и типизация (Ruff + Mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Клонирование репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Настройка Python 3.13
+        run: uv python install 3.13
+
+      - name: Установка зависимостей
+        run: uv sync --all-groups
+
+      - name: Проверка форматирования (ruff format)
+        run: uv run ruff format --check .
+
+      - name: Линтинг (ruff check)
+        run: uv run ruff check .
+
+      - name: Строгая статическая типизация (mypy strict)
+        run: uv run mypy
+
+  test:
+    name: Модульные и интеграционные тесты (Pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Клонирование репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Настройка Python 3.13
+        run: uv python install 3.13
+
+      - name: Установка зависимостей
+        run: uv sync --all-groups
+
+      - name: Запуск тестов
+        run: uv run pytest
+
+  frontend:
+    name: Проверка и сборка веб-интерфейса (Svelte + Node)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Клонирование репозитория
+        uses: actions/checkout@v4
+
+      - name: Настройка Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+
+      - name: Установка зависимостей интерфейса
+        run: cd frontend && npm ci
+
+      - name: Проверка типов, тесты и сборка (npm run verify)
+        run: cd frontend && npm run verify
