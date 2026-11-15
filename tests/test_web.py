@@ -217,3 +217,40 @@ def test_oversized_request_body_is_rejected_before_parsing() -> None:
 
     assert response.status_code == 413
     assert factory.clients == []
+
+
+@pytest.mark.parametrize(
+    "ssrf_url",
+    [
+        "http://localhost:22/",
+        "http://127.0.0.1:18095/",
+        "http://192.168.1.1/admin",
+        "http://10.0.0.1/",
+        "http://169.254.169.254/latest/meta-data",
+        "http://0.0.0.0/",
+        "http://[::1]:8080/",
+    ],
+)
+def test_ssrf_internal_targets_are_rejected(ssrf_url: str) -> None:
+    """Обращение к служебным, облачным и локальным адресам сети блокируется."""
+    factory = _ClientFactory()
+    with TestClient(
+        create_app(client_factory=factory), base_url="http://localhost"
+    ) as api:
+        response = api.post("/api/measure", json={"url": ssrf_url})
+
+    assert response.status_code == 422
+    data = TypeAdapter(dict[str, object]).validate_json(response.content)
+    assert "запрещено" in str(data["message"])
+    assert factory.clients == []
+
+
+def test_security_headers_are_present_on_responses() -> None:
+    """Ответы сервера содержат защитные заголовки CSP, no-sniff и Deny."""
+    with TestClient(create_app(), base_url="http://localhost") as client:
+        response = client.get("/")
+
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    assert "default-src 'self'" in response.headers["Content-Security-Policy"]

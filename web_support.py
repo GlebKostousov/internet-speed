@@ -1,6 +1,7 @@
 """Контракты HTTP и владение ресурсами потокового измерения."""
 
 import asyncio
+import ipaddress
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from typing import Literal, Protocol, Self
 
@@ -8,7 +9,14 @@ import anyio
 import httpx
 from anyio.abc import TaskGroup
 from fastapi import HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    ValidationError,
+    model_validator,
+)
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -26,6 +34,31 @@ class HttpClientFactory(Protocol):
         ...
 
 
+def _is_private_or_internal_host(host: str) -> bool:
+    """Проверить, является ли хост приватным, локальным или служебным адресом.
+
+    Args:
+        host: Доменное имя или IP-адрес.
+
+    Returns:
+        True, если адрес указывает на внутреннюю или локальную сеть.
+    """
+    clean_host = host.strip("[]").lower()
+    if clean_host in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    try:
+        ip = ipaddress.ip_address(clean_host)
+        return (
+            ip.is_loopback
+            or ip.is_private
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_unspecified
+        )
+    except ValueError:
+        return False
+
+
 class MeasureRequest(BaseModel):
     """Проверенные параметры измерения из браузера."""
 
@@ -35,6 +68,29 @@ class MeasureRequest(BaseModel):
     timeout_seconds: float = Field(
         default=DEFAULT_TIMEOUT_SECONDS, gt=0, le=120, strict=True
     )
+
+    @model_validator(mode="after")
+    def validate_target_safety(self) -> Self:
+        """Запретить несанкционированные обращения к приватной инфраструктуре (SSRF).
+
+        Returns:
+            Проверенный объект запроса.
+
+        Raises:
+            ValueError: Целевой адрес находится в приватной или служебной сети.
+        """
+        host = self.url.host
+        if not host:
+            raise ValueError("В адресе не указан хост.")
+        path = self.url.path or ""
+        is_demo = host.lower() in {"localhost", "127.0.0.1", "[::1]"} and path.endswith(
+            "demo.bin"
+        )
+        if _is_private_or_internal_host(host) and not is_demo:
+            raise ValueError(
+                "Обращение к локальным или приватным адресам сети запрещено."
+            )
+        return self
 
 
 class SampleData(BaseModel):
@@ -187,9 +243,10 @@ async def parse_measure_request(request: Request) -> MeasureRequest:
     try:
         return MeasureRequest.model_validate_json(body)
     except ValidationError as error:
+        detail = error.errors()[0]["msg"] if error.errors() else "Некорректный запрос."
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "Проверьте HTTP(S)-адрес и таймаут: число больше 0 и не более 120 секунд.",
+            f"Некорректные параметры: {detail}",
         ) from error
 
 

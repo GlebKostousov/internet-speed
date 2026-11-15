@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,7 +10,7 @@ from pathlib import Path
 import anyio
 import httpx
 import uvicorn
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException
@@ -183,6 +183,28 @@ def create_app(*, client_factory: HttpClientFactory = build_http_client) -> Fast
     allowed_hosts = [host.strip() for host in raw_hosts.split(",") if host.strip()]
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
     app.add_exception_handler(HTTPException, _http_error)
+
+    @app.middleware("http")
+    async def add_security_headers(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """Применить строгие заголовки безопасности ко всем HTTP-ответам."""
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "geolocation=(), camera=(), microphone=(), payment=()"
+        )
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "script-src 'self'; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none';"
+        )
+        return response
 
     handlers = WebHandlers(client_factory=client_factory)
     app.add_api_route("/api/measure", handlers.start_measurement, methods=["POST"])

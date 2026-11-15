@@ -48,6 +48,8 @@ class RequestMeasurement:
     @property
     def mebibytes_per_second(self) -> float:
         """Вернуть скорость одной полной загрузки в MiB/s."""
+        if self.elapsed_seconds <= 0:
+            return 0.0
         return self.total_bytes / self.elapsed_seconds / BYTES_PER_MEBIBYTE
 
 
@@ -91,6 +93,8 @@ class Measurement:
     @property
     def mebibytes_per_second(self) -> float:
         """Вернуть скорость по общему объёму и суммарному времени."""
+        if self.total_seconds <= 0:
+            return 0.0
         return self.total_bytes / self.total_seconds / BYTES_PER_MEBIBYTE
 
 
@@ -137,6 +141,57 @@ async def _count_body(response: httpx.Response) -> int:
     return total_bytes
 
 
+STATUS_MESSAGES: dict[int, str] = {
+    403: "доступ к файлу запрещён сервером (HTTP 403).",
+    404: "файл не найден (HTTP 404). Проверьте правильность адреса.",
+}
+
+
+def _redirect_or_default(code: int) -> str:
+    """Вернуть сообщение для редиректа или общего статуса.
+
+    Args:
+        code: Числовой статус HTTP-ответа.
+
+    Returns:
+        Пояснение причины ошибки.
+    """
+    if 300 <= code < 400:
+        return (
+            f"сервер вернул перенаправление HTTP {code}. "
+            "Нужен прямой адрес файла без редиректов."
+        )
+    return f"сервер вернул HTTP {code}. Нужен прямой адрес с успешным ответом 2xx."
+
+
+def _http_status_message(code: int) -> str:
+    """Описать код HTTP-ответа без превышения сложности.
+
+    Args:
+        code: Числовой статус HTTP-ответа.
+
+    Returns:
+        Понятное объяснение причины сбоя.
+    """
+    return STATUS_MESSAGES.get(code, _redirect_or_default(code))
+
+
+def _network_error_message(error: httpx.HTTPError) -> str:
+    """Вернуть описание для ошибок библиотеки HTTPX.
+
+    Args:
+        error: Исходная ошибка сетевого обмена.
+
+    Returns:
+        Сообщение без чувствительных данных.
+    """
+    if isinstance(error, httpx.HTTPStatusError):
+        return _http_status_message(error.response.status_code)
+    if isinstance(error, httpx.ConnectError):
+        return "не удалось установить соединение (хост недоступен или ошибка сети)."
+    return f"ошибка сети или передачи данных ({type(error).__name__})."
+
+
 def _request_error_message(error: httpx.HTTPError | TimeoutError) -> str:
     """Описать сбой без URL, токенов и тела ответа.
 
@@ -148,12 +203,7 @@ def _request_error_message(error: httpx.HTTPError | TimeoutError) -> str:
     """
     if isinstance(error, (TimeoutError, httpx.TimeoutException)):
         return "превышен таймаут. При необходимости увеличьте --timeout."
-    if isinstance(error, httpx.HTTPStatusError):
-        return (
-            f"сервер вернул HTTP {error.response.status_code}. "
-            "Нужен прямой адрес с успешным ответом 2xx."
-        )
-    return f"ошибка сети или передачи данных ({type(error).__name__})."
+    return _network_error_message(error)
 
 
 async def _download(
@@ -218,7 +268,7 @@ async def iter_samples(
             request_number=index,
             timeout_seconds=timeout_seconds,
         )
-        elapsed = clock() - started
+        elapsed = max(clock() - started, 1e-6)
         yield RequestMeasurement(
             index=index, total_bytes=downloaded_bytes, elapsed_seconds=elapsed
         )

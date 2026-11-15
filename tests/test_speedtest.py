@@ -274,3 +274,39 @@ def test_cli_failure_has_nonzero_exit_without_success_report(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "Запрос 1/10" in captured.err
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_phrase"),
+    [
+        (404, r"файл не найден \(HTTP 404\)"),
+        (403, "доступ к файлу запрещён"),
+        (301, "перенаправление HTTP 301"),
+    ],
+)
+def test_specific_http_status_error_messages(
+    status_code: int, expected_phrase: str
+) -> None:
+    """Ошибки 404, 403 и редиректы 301 дают понятное описание причины."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, request=request, stream=_ChunkStream(()))
+
+    with pytest.raises(speedtest.MeasurementError, match=expected_phrase):
+        asyncio.run(_measure(handler))
+
+
+def _frozen_clock() -> float:
+    return 100.0
+
+
+def _frozen_handler(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, request=request, stream=_ChunkStream((b"bytes",)))
+
+
+def test_zero_duration_clock_is_safe_against_division_by_zero() -> None:
+    """Одинаковое значение часов не вызывает деления на ноль."""
+    result = asyncio.run(_measure(_frozen_handler, clock=_frozen_clock))
+    assert result.total_bytes == 50
+    assert result.total_seconds > 0
+    assert result.mebibytes_per_second > 0
