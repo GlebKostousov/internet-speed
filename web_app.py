@@ -186,8 +186,8 @@ def create_app(*, client_factory: HttpClientFactory = build_http_client) -> Fast
 
     handlers = WebHandlers(client_factory=client_factory)
     app.add_api_route("/api/measure", handlers.start_measurement, methods=["POST"])
-    app.add_api_route("/demo.bin", _demo_file, methods=["GET"])
-    app.add_api_route("/", _index, methods=["GET"])
+    app.add_api_route("/demo.bin", _demo_file, methods=["GET", "HEAD"])
+    app.add_api_route("/", _index, methods=["GET", "HEAD"])
 
     app.mount(
         "/assets",
