@@ -1,0 +1,52 @@
+[project]
+name = "internet-speed"
+version = "1.0.0"
+description = "Скорость десяти последовательных HTTP-загрузок"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "anyio>=4.14,<5",
+    "fastapi>=0.136.3,<1",
+    "httpx[socks]==0.28.1",
+    "uvicorn>=0.48.0,<1",
+]
+
+[dependency-groups]
+dev = ["mypy>=1.15,<2", "pytest>=8.3,<10", "ruff>=0.14.3,<1"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["."]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+pretty = true
+files = ["measurement.py", "speedtest.py", "web_app.py", "web_support.py", "tests"]
+enable_error_code = ["ignore-without-code"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "ANN", "C90", "D", "S", "T20"]
+ignore = ["D203", "D212", "D401"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 3
+
+[tool.ruff.lint.per-file-ignores]
+# Вывод в консоль — интерфейс CLI, assert — проверки в тестах.
+"speedtest.py" = ["T201"]
+"tests/**" = ["S101"]
+
+[tool.ruff.format]
+docstring-code-format = true
