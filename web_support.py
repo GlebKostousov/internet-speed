@@ -34,6 +34,44 @@ class HttpClientFactory(Protocol):
         ...
 
 
+def _is_ip_private(ip_str: str) -> bool:
+    """Проверить, является ли строковый IP-адрес приватным или локальным.
+
+    Args:
+        ip_str: Строка с IP-адресом.
+
+    Returns:
+        True, если адрес принадлежит приватным, локальным или служебным диапазонам.
+    """
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return (
+            ip.is_loopback
+            or ip.is_private
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_unspecified
+            or ip.is_multicast
+        )
+    except ValueError:
+        return False
+
+
+def _is_ip_embedded_in_host(host: str) -> bool:
+    """Проверить наличие приватного IPv4 в имени домена (например, nip.io).
+
+    Args:
+        host: Доменное имя хоста.
+
+    Returns:
+        True, если подстрока домена совпадает с приватным IP.
+    """
+    parts = host.split(".")
+    return any(
+        _is_ip_private(".".join(parts[i : i + 4])) for i in range(len(parts) - 3)
+    )
+
+
 def _is_private_or_internal_host(host: str) -> bool:
     """Проверить, является ли хост приватным, локальным или служебным адресом.
 
@@ -44,19 +82,13 @@ def _is_private_or_internal_host(host: str) -> bool:
         True, если адрес указывает на внутреннюю или локальную сеть.
     """
     clean_host = host.strip("[]").lower()
-    if clean_host in {"localhost", "127.0.0.1", "::1"}:
+    if clean_host in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    } or clean_host.endswith((".localhost", ".local", ".internal", ".lan")):
         return True
-    try:
-        ip = ipaddress.ip_address(clean_host)
-        return (
-            ip.is_loopback
-            or ip.is_private
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_unspecified
-        )
-    except ValueError:
-        return False
+    return _is_ip_private(clean_host) or _is_ip_embedded_in_host(clean_host)
 
 
 class MeasureRequest(BaseModel):
