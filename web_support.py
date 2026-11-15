@@ -2,7 +2,10 @@
 
 import asyncio
 import ipaddress
-from collections.abc import AsyncGenerator, AsyncIterator, Mapping
+import random
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
+from dataclasses import dataclass, field
+from time import monotonic
 from typing import Literal, Protocol, Self
 
 import anyio
@@ -218,6 +221,157 @@ class MeasurementLimitMiddleware:
             await self._app(scope, receive, send)
         finally:
             self._limiter.release()
+
+
+@dataclass(slots=True)
+class _ClientRateRecord:
+    """Состояние запросов и блокировки одного IP-адреса."""
+
+    timestamps: list[float] = field(default_factory=list)
+    violations: int = 0
+    blocked_until: float = 0.0
+
+
+def calculate_exponential_jitter_delay(
+    streak: int,
+    *,
+    base_delay: float = 10.0,
+    max_delay: float = 600.0,
+    jitter_ratio: float = 0.25,
+    random_factor: float = 0.5,
+) -> int:
+    """Вычислить экспоненциальную задержку с джиттером для Retry-After.
+
+    Args:
+        streak: Количество нарушений подряд (от 1).
+        base_delay: Базовое время задержки в секундах.
+        max_delay: Максимальный потолок задержки.
+        jitter_ratio: Доля случайного разброса.
+        random_factor: Случайный фактор от 0.0 до 1.0.
+
+    Returns:
+        Целое число секунд ожидания для заголовка Retry-After.
+    """
+    exponent = min(max(0, streak - 1), 10)
+    delay = min(base_delay * (2**exponent), max_delay)
+    jitter = delay * jitter_ratio * random_factor
+    return max(1, int(round(delay + jitter)))
+
+
+def _forwarded_ip_or_none(header_value: str | None) -> str | None:
+    """Извлечь первый IP-адрес из цепочки X-Forwarded-For."""
+    if not header_value:
+        return None
+    candidate = header_value.split(",")[0].strip()
+    return candidate or None
+
+
+def extract_client_ip(request: Request) -> str:
+    """Извлечь IP-адрес клиента с учётом прокси или сокета.
+
+    Args:
+        request: Входящий HTTP-запрос.
+
+    Returns:
+        Строка с IP-адресом клиента.
+    """
+    forwarded = _forwarded_ip_or_none(request.headers.get("x-forwarded-for"))
+    if forwarded:
+        return forwarded
+    if request.client and request.client.host:
+        return request.client.host
+    return "127.0.0.1"
+
+
+class IpRateLimiter:
+    """Частотный ограничитель запусков по IP со скользящим окном и джиттером."""
+
+    def __init__(
+        self,
+        *,
+        max_requests: int = 5,
+        window_seconds: float = 600.0,
+        base_delay: float = 10.0,
+        max_delay: float = 600.0,
+        jitter_ratio: float = 0.25,
+        clock: Callable[[], float] = monotonic,
+        random_factor: Callable[[], float] = random.random,
+    ) -> None:
+        """Инициализировать параметры окна и задержки."""
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.jitter_ratio = jitter_ratio
+        self.clock = clock
+        self.random_factor = random_factor
+        self._records: dict[str, _ClientRateRecord] = {}
+
+    def _get_record(self, ip: str) -> _ClientRateRecord:
+        """Получить или создать запись для IP."""
+        record = self._records.get(ip)
+        if record is None:
+            record = _ClientRateRecord()
+            self._records[ip] = record
+        return record
+
+    def _check_active_block(self, record: _ClientRateRecord, now: float) -> None:
+        """Проверить, не действует ли ещё текущая блокировка."""
+        if now < record.blocked_until:
+            remaining = max(1, int(round(record.blocked_until - now)))
+            window_minutes = int(self.window_seconds // 60)
+            message = (
+                f"Превышен лимит запусков с вашего IP "
+                f"(максимум {self.max_requests} за {window_minutes} мин). "
+                f"Попробуйте через {remaining} с."
+            )
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=message,
+                headers={"Retry-After": str(remaining)},
+            )
+
+    def _enforce_limit(self, record: _ClientRateRecord, now: float) -> None:
+        """Проверить скользящее окно и применить экспоненциальный бэкофф с джиттером."""
+        cutoff = now - self.window_seconds
+        record.timestamps = [t for t in record.timestamps if t > cutoff]
+        if len(record.timestamps) >= self.max_requests:
+            record.violations += 1
+            delay = calculate_exponential_jitter_delay(
+                record.violations,
+                base_delay=self.base_delay,
+                max_delay=self.max_delay,
+                jitter_ratio=self.jitter_ratio,
+                random_factor=self.random_factor(),
+            )
+            record.blocked_until = now + delay
+            window_minutes = int(self.window_seconds // 60)
+            message = (
+                f"Превышен лимит запусков с вашего IP "
+                f"(максимум {self.max_requests} за {window_minutes} мин). "
+                f"Повторите попытку через {delay} с."
+            )
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=message,
+                headers={"Retry-After": str(delay)},
+            )
+        record.timestamps.append(now)
+
+    def check(self, request: Request) -> None:
+        """Проверить запрос на превышение лимита частоты.
+
+        Args:
+            request: Входящий HTTP-запрос.
+
+        Raises:
+            HTTPException: 429 Too Many Requests с понятным сообщением и Retry-After.
+        """
+        ip = extract_client_ip(request)
+        now = self.clock()
+        record = self._get_record(ip)
+        self._check_active_block(record, now)
+        self._enforce_limit(record, now)
 
 
 class DisconnectAwareResponse(StreamingResponse):

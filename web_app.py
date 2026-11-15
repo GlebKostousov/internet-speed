@@ -29,6 +29,7 @@ from web_support import (
     DisconnectAwareResponse,
     ErrorEvent,
     HttpClientFactory,
+    IpRateLimiter,
     MeasurementLimitMiddleware,
     MeasureRequest,
     SampleData,
@@ -133,10 +134,12 @@ class WebHandlers:
     """HTTP-граница с явно переданной фабрикой сетевого клиента."""
 
     client_factory: HttpClientFactory
+    rate_limiter: IpRateLimiter
 
     async def start_measurement(self, request: Request) -> StreamingResponse:
         """Начать измерение и отдавать результаты после каждого полного ответа."""
         parameters = await parse_measure_request(request)
+        self.rate_limiter.check(request)
         return DisconnectAwareResponse(
             _events(parameters, self.client_factory),
             media_type="application/x-ndjson",
@@ -164,11 +167,16 @@ async def _index() -> FileResponse:
     return FileResponse(path)
 
 
-def create_app(*, client_factory: HttpClientFactory = build_http_client) -> FastAPI:
+def create_app(
+    *,
+    client_factory: HttpClientFactory = build_http_client,
+    rate_limiter: IpRateLimiter | None = None,
+) -> FastAPI:
     """Собрать локальное приложение с изолированными ресурсами измерений.
 
     Args:
         client_factory: Фабрика HTTP-клиентов; подменяется тестовым транспортом.
+        rate_limiter: Ограничитель частоты запусков по IP.
 
     Returns:
         Приложение с допуском одной активной серии на процесс.
@@ -206,7 +214,8 @@ def create_app(*, client_factory: HttpClientFactory = build_http_client) -> Fast
         )
         return response
 
-    handlers = WebHandlers(client_factory=client_factory)
+    limiter = rate_limiter or IpRateLimiter()
+    handlers = WebHandlers(client_factory=client_factory, rate_limiter=limiter)
     app.add_api_route("/api/measure", handlers.start_measurement, methods=["POST"])
     app.add_api_route("/demo.bin", _demo_file, methods=["GET", "HEAD"])
     app.add_api_route("/", _index, methods=["GET", "HEAD"])

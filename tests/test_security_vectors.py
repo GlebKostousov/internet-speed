@@ -11,7 +11,11 @@ from pydantic import ValidationError
 
 from measurement import MeasurementError, _count_body, measure
 from web_app import create_app
-from web_support import MeasureRequest
+from web_support import (
+    IpRateLimiter,
+    MeasureRequest,
+    calculate_exponential_jitter_delay,
+)
 
 
 @pytest.mark.parametrize(
@@ -171,3 +175,93 @@ def test_hostile_json_payload_rejected_by_api() -> None:
             json={"url": "https://example.com/f", "timeout_seconds": -5},
         )
         assert res_timeout.status_code == 422
+
+
+def test_calculate_exponential_jitter_delay_grows_and_bounds() -> None:
+    """Вычисление задержки растёт экспоненциально, учитывает джиттер и потолок."""
+    delay1 = calculate_exponential_jitter_delay(1, base_delay=10.0, random_factor=0.0)
+    delay2 = calculate_exponential_jitter_delay(2, base_delay=10.0, random_factor=0.0)
+    delay3 = calculate_exponential_jitter_delay(3, base_delay=10.0, random_factor=0.0)
+    assert delay1 == 10
+    assert delay2 == 20
+    assert delay3 == 40
+
+    jittered1 = calculate_exponential_jitter_delay(
+        1, base_delay=10.0, jitter_ratio=0.25, random_factor=1.0
+    )
+    assert jittered1 == 12
+
+    capped = calculate_exponential_jitter_delay(
+        20, base_delay=10.0, max_delay=60.0, random_factor=0.0
+    )
+    assert capped == 60
+
+
+def _mock_stream_transport(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(
+        status_code=200, stream=httpx.ByteStream(b"data"), request=request
+    )
+
+
+def _mock_stream_factory(*, timeout_seconds: float = 30.0) -> httpx.AsyncClient:
+    return httpx.AsyncClient(transport=httpx.MockTransport(_mock_stream_transport))
+
+
+def test_ip_rate_limiter_allows_quota_then_blocks_with_retry_after() -> None:
+    """Ограничитель IP разрешает квоту, затем блокирует запрос с Retry-After."""
+    mock_now = [1000.0]
+
+    limiter = IpRateLimiter(
+        max_requests=2,
+        window_seconds=60.0,
+        base_delay=15.0,
+        jitter_ratio=0.0,
+        clock=lambda: mock_now[0],
+    )
+    app = create_app(client_factory=_mock_stream_factory, rate_limiter=limiter)
+
+    with TestClient(app, base_url="http://localhost") as client:
+        # Первые 2 запроса с одного IP разрешены
+        res1 = client.post(
+            "/api/measure",
+            json={"url": "https://example.com/f"},
+            headers={"X-Forwarded-For": "198.51.100.1"},
+        )
+        assert res1.status_code == 200
+
+        res2 = client.post(
+            "/api/measure",
+            json={"url": "https://example.com/f"},
+            headers={"X-Forwarded-For": "198.51.100.1"},
+        )
+        assert res2.status_code == 200
+
+        # 3-й запрос превышает квоту: отказ 429 с Retry-After и понятным сообщением
+        res3 = client.post(
+            "/api/measure",
+            json={"url": "https://example.com/f"},
+            headers={"X-Forwarded-For": "198.51.100.1"},
+        )
+        assert res3.status_code == 429
+        assert res3.headers["Retry-After"] == "15"
+        assert "Превышен лимит запусков с вашего IP" in res3.json()["message"]
+        assert "15 с" in res3.json()["message"]
+
+        # Другой IP адрес не блокируется
+        res_other = client.post(
+            "/api/measure",
+            json={"url": "https://example.com/f"},
+            headers={"X-Forwarded-For": "198.51.100.2"},
+        )
+        assert res_other.status_code == 200
+
+        # Повторная попытка во время блокировки возвращает оставшееся время
+        mock_now[0] += 5.0
+        res_during_block = client.post(
+            "/api/measure",
+            json={"url": "https://example.com/f"},
+            headers={"X-Forwarded-For": "198.51.100.1"},
+        )
+        assert res_during_block.status_code == 429
+        assert res_during_block.headers["Retry-After"] == "10"
+        assert "10 с" in res_during_block.json()["message"]
